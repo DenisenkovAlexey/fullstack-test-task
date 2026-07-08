@@ -28,8 +28,8 @@ class FileService:
         self._alert_repo = alert_repo
         self._storage_dir = storage_dir
 
-    async def list_files(self) -> list[StoredFile]:
-        return list(await self._file_repo.get_all())
+    async def list_files(self, limit: int = 100, offset: int = 0) -> list[StoredFile]:
+        return list(await self._file_repo.get_all(limit=limit, offset=offset))
 
     async def get_file(self, file_id: str) -> StoredFile:
         file_item = await self._file_repo.get_by_id(file_id)

@@ -11,15 +11,14 @@ from src.services.service_factory import ServiceFactory
 logger = logging.getLogger(__name__)
 
 
-async def list_files() -> list[StoredFile]:
+async def list_files(limit: int = 100, offset: int = 0) -> list[StoredFile]:
     async with async_session_maker() as session:
-        return await ServiceFactory.get_service(name="file", session=session).list_files()
+        return await ServiceFactory.get_service(name="file", session=session).list_files(limit=limit, offset=offset)
 
 
-
-async def list_alerts() -> list[Alert]:
+async def list_alerts(limit: int = 100, offset: int = 0) -> list[Alert]:
     async with async_session_maker() as session:
-        return await ServiceFactory.get_service(name="alert", session=session).list_alerts()
+        return await ServiceFactory.get_service(name="alert", session=session).list_alerts(limit=limit, offset=offset)
 
 
 async def get_file(file_id: str) -> StoredFile:

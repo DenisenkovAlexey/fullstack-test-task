@@ -15,15 +15,22 @@ class AlertRepository:
     async def get_by_id(self, alert_id: int) -> Alert | None:
         return await self._session.get(Alert, alert_id)
 
-    async def get_all(self) -> Sequence[Alert]:
+    async def get_all(self, limit: int = 100, offset: int = 0) -> Sequence[Alert]:
         result = await self._session.execute(
-            select(Alert).order_by(Alert.created_at.desc())
+            select(Alert)
+            .order_by(Alert.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
         return result.scalars().all()
 
-    async def get_by_file_id(self, file_id: str) -> Sequence[Alert]:
+    async def get_by_file_id(self, file_id: str, limit: int = 100, offset: int = 0) -> Sequence[Alert]:
         result = await self._session.execute(
-            select(Alert).where(Alert.file_id == file_id).order_by(Alert.created_at.desc())
+            select(Alert)
+            .where(Alert.file_id == file_id)
+            .order_by(Alert.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
         return result.scalars().all()
 

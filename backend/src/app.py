@@ -24,13 +24,13 @@ app.add_middleware(
 
 
 @app.get("/files", response_model=list[FileItem])
-async def list_files_view():
-    return await list_files()
+async def list_files_view(limit: int = 100, offset: int = 0):
+    return await list_files(limit=limit, offset=offset)
 
 
 @app.get("/alerts", response_model=list[AlertItem])
-async def list_alerts_view():
-    return await list_alerts()
+async def list_alerts_view(limit: int = 100, offset: int = 0):
+    return await list_alerts(limit=limit, offset=offset)
 
 
 @app.post("/files", response_model=FileItem, status_code=201)

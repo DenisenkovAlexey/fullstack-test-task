@@ -14,8 +14,8 @@ class AlertService:
     def __init__(self, alert_repo: AlertRepository) -> None:
         self._alert_repo = alert_repo
 
-    async def list_alerts(self) -> list[Alert]:
-        return list(await self._alert_repo.get_all())
+    async def list_alerts(self, limit: int = 100, offset: int = 0) -> list[Alert]:
+        return list(await self._alert_repo.get_all(limit=limit, offset=offset))
 
     async def create_alert(self, file_id: str, level: str, message: str) -> Alert:
         # Идемпотентность: проверяем, существует ли уже такой алерт

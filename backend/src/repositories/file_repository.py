@@ -15,9 +15,12 @@ class FileRepository:
     async def get_by_id(self, file_id: str) -> StoredFile | None:
         return await self._session.get(StoredFile, file_id)
 
-    async def get_all(self) -> Sequence[StoredFile]:
+    async def get_all(self, limit: int = 100, offset: int = 0) -> Sequence[StoredFile]:
         result = await self._session.execute(
-            select(StoredFile).order_by(StoredFile.created_at.desc())
+            select(StoredFile)
+            .order_by(StoredFile.created_at.desc())
+            .limit(limit)
+            .offset(offset)
         )
         return result.scalars().all()
 
