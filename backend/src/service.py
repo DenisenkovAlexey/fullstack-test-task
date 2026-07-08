@@ -1,4 +1,6 @@
+import logging
 import mimetypes
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -8,6 +10,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from src.config.database import database_settings
 from src.models import Alert, StoredFile
+
+logger = logging.getLogger(__name__)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -47,7 +51,16 @@ async def create_file(title: str, upload_file: UploadFile) -> StoredFile:
     suffix = Path(upload_file.filename or "").suffix
     stored_name = f"{file_id}{suffix}"
     stored_path = STORAGE_DIR / stored_name
-    stored_path.write_bytes(content)
+
+    # Атомарная запись: сначала во временный файл, потом rename
+    try:
+        with tempfile.NamedTemporaryFile(dir=STORAGE_DIR, delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(content)
+            tmp_path = Path(tmp_file.name)
+        tmp_path.replace(stored_path)
+    except Exception:
+        logger.exception("Failed to write file %s", stored_name)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save file")
 
     file_item = StoredFile(
         id=file_id,
@@ -60,8 +73,14 @@ async def create_file(title: str, upload_file: UploadFile) -> StoredFile:
     )
     async with async_session_maker() as session:
         session.add(file_item)
-        await session.commit()
-        await session.refresh(file_item)
+        try:
+            await session.commit()
+            await session.refresh(file_item)
+        except Exception:
+            # Если запись в БД не удалась — удаляем файл
+            stored_path.unlink(missing_ok=True)
+            logger.exception("Failed to create file record for %s", file_id)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create file record")
     return file_item
 
 
@@ -81,11 +100,19 @@ async def delete_file(file_id: str) -> None:
         file_item = await session.get(StoredFile, file_id)
         if not file_item:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-        stored_path = STORAGE_DIR / file_item.stored_name
-        if stored_path.exists():
-            stored_path.unlink()
+        stored_name = file_item.stored_name
         await session.delete(file_item)
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception:
+            logger.exception("Failed to delete file record for %s", file_id)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file record")
+
+    # Удаляем файл только после успешного удаления из БД
+    stored_path = STORAGE_DIR / stored_name
+    if stored_path.exists():
+        stored_path.unlink()
+        logger.info("Deleted stored file %s", stored_name)
 
 
 async def get_file_path(file_id: str) -> tuple[StoredFile, Path]:

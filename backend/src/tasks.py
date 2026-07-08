@@ -1,15 +1,19 @@
 import asyncio
+import logging
 from pathlib import Path
 
 import celery
 # from aio_celery import Celery
 from celery import Celery
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from src.config.celery import celery_settings
 from src.config.database import database_settings
 from src.models import Alert, StoredFile
 from src.service import STORAGE_DIR
+
+logger = logging.getLogger(__name__)
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -100,30 +104,58 @@ async def _send_file_alert(file_id: str) -> None:
             return
 
         if file_item.processing_status == "failed":
-            alert = Alert(file_id=file_id, level="critical", message="File processing failed")
+            level = "critical"
+            message = "File processing failed"
         elif file_item.requires_attention:
-            alert = Alert(
-                file_id=file_id,
-                level="warning",
-                message=f"File requires attention: {file_item.scan_details}",
-            )
+            level = "warning"
+            message = f"File requires attention: {file_item.scan_details}"
         else:
-            alert = Alert(file_id=file_id, level="info", message="File processed successfully")
+            level = "info"
+            message = "File processed successfully"
 
+        # Идемпотентность: проверяем, существует ли уже такой алерт
+        existing = await session.execute(
+            select(Alert).where(
+                Alert.file_id == file_id,
+                Alert.level == level,
+                Alert.message == message,
+            )
+        )
+        if existing.scalar_one_or_none():
+            logger.info("Alert already exists for file %s: %s", file_id, message)
+            return
+
+        alert = Alert(file_id=file_id, level=level, message=message)
         session.add(alert)
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception:
+            logger.exception("Failed to create alert for file %s", file_id)
+            raise
 
 
-@celery_app.task
-def scan_file_for_threats(file_id: str) -> None:
-    run_in_worker_loop(_scan_file_for_threats(file_id))
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def scan_file_for_threats(self, file_id: str) -> None:
+    try:
+        run_in_worker_loop(_scan_file_for_threats(file_id))
+    except Exception as exc:
+        logger.error("scan_file_for_threats failed for %s: %s", file_id, exc)
+        raise self.retry(exc=exc)
 
 
-@celery_app.task
-def extract_file_metadata(file_id: str) -> None:
-    run_in_worker_loop(_extract_file_metadata(file_id))
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def extract_file_metadata(self, file_id: str) -> None:
+    try:
+        run_in_worker_loop(_extract_file_metadata(file_id))
+    except Exception as exc:
+        logger.error("extract_file_metadata failed for %s: %s", file_id, exc)
+        raise self.retry(exc=exc)
 
 
-@celery_app.task
-def send_file_alert(file_id: str) -> None:
-    run_in_worker_loop(_send_file_alert(file_id))
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def send_file_alert(self, file_id: str) -> None:
+    try:
+        run_in_worker_loop(_send_file_alert(file_id))
+    except Exception as exc:
+        logger.error("send_file_alert failed for %s: %s", file_id, exc)
+        raise self.retry(exc=exc)

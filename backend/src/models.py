@@ -19,7 +19,7 @@ class StoredFile(Base):
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), nullable=False, default="uploaded")
     scan_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    scan_details: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    scan_details: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     requires_attention: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
