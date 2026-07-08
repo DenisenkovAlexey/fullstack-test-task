@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import 'bootstrap/dist/css/bootstrap.min.css';
-import { Container } from "react-bootstrap";
+import { BootstrapProvider } from "../ui/providers/BootstrapProvider";
+import { AppContainer } from "../ui/components/AppContainer";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -20,9 +20,11 @@ export default async function RootLayout({
         <link rel="icon" href="/public/favicon.ico" sizes="any" />
       </head>
       <body>
-        <Container fluid className='p-0'>
+        <BootstrapProvider>
+          <AppContainer>
             {children}
-        </Container>
+          </AppContainer>
+        </BootstrapProvider>
       </body>
     </html>
   );
