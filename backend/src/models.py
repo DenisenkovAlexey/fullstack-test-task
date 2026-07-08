@@ -17,6 +17,7 @@ class StoredFile(Base):
     stored_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     mime_type: Mapped[str] = mapped_column(String(255), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     processing_status: Mapped[str] = mapped_column(String(50), nullable=False, default="uploaded")
     scan_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     scan_details: Mapped[str | None] = mapped_column(String(2000), nullable=True)

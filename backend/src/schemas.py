@@ -11,6 +11,7 @@ class FileItem(BaseModel):
     original_name: str
     mime_type: str
     size: int
+    content_hash: str | None
     processing_status: str
     scan_status: str | None
     scan_details: str | None

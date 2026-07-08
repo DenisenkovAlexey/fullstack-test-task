@@ -1,94 +1,42 @@
 import logging
-import mimetypes
-import tempfile
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config.database import database_settings
-from src.models import Alert, StoredFile
+from src.infrastructure.persistence.session import async_session_maker
+from src.models import StoredFile, Alert
+from src.services.service_factory import ServiceFactory
 
 logger = logging.getLogger(__name__)
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-STORAGE_DIR = BASE_DIR / "storage" / "files"
-STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-
-engine = create_async_engine(database_settings.url)
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
-
-
 async def list_files() -> list[StoredFile]:
     async with async_session_maker() as session:
-        result = await session.execute(select(StoredFile).order_by(StoredFile.created_at.desc()))
-        return list(result.scalars().all())
+        return await ServiceFactory.get_service(name="file", session=session).list_files()
+
 
 
 async def list_alerts() -> list[Alert]:
     async with async_session_maker() as session:
-        result = await session.execute(select(Alert).order_by(Alert.created_at.desc()))
-        return list(result.scalars().all())
+        return await ServiceFactory.get_service(name="alert", session=session).list_alerts()
 
 
 async def get_file(file_id: str) -> StoredFile:
     async with async_session_maker() as session:
-        file_item = await session.get(StoredFile, file_id)
-        if not file_item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-        return file_item
+        return await ServiceFactory.get_service(name="file", session=session).get_file(file_id)
+
 
 
 async def create_file(title: str, upload_file: UploadFile) -> StoredFile:
-    content = await upload_file.read()
-    if not content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty")
-
-    file_id = str(uuid4())
-    suffix = Path(upload_file.filename or "").suffix
-    stored_name = f"{file_id}{suffix}"
-    stored_path = STORAGE_DIR / stored_name
-
-    # Атомарная запись: сначала во временный файл, потом rename
-    try:
-        with tempfile.NamedTemporaryFile(dir=STORAGE_DIR, delete=False, suffix=suffix) as tmp_file:
-            tmp_file.write(content)
-            tmp_path = Path(tmp_file.name)
-        tmp_path.replace(stored_path)
-    except Exception:
-        logger.exception("Failed to write file %s", stored_name)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save file")
-
-    file_item = StoredFile(
-        id=file_id,
-        title=title,
-        original_name=upload_file.filename or stored_name,
-        stored_name=stored_name,
-        mime_type=upload_file.content_type or mimetypes.guess_type(stored_name)[0] or "application/octet-stream",
-        size=len(content),
-        processing_status="uploaded",
-    )
     async with async_session_maker() as session:
-        session.add(file_item)
-        try:
-            await session.commit()
-            await session.refresh(file_item)
-        except Exception:
-            # Если запись в БД не удалась — удаляем файл
-            stored_path.unlink(missing_ok=True)
-            logger.exception("Failed to create file record for %s", file_id)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create file record")
-    return file_item
+        return await ServiceFactory.get_service(name="file", session=session).create_file(title, upload_file)
 
 
 async def update_file(file_id: str, title: str) -> StoredFile:
     async with async_session_maker() as session:
-        file_item = await session.get(StoredFile, file_id)
-        if not file_item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        file_service = ServiceFactory.get_service(name="file", session=session)
+        file_item = await file_service.get_file(file_id)
         file_item.title = title
         await session.commit()
         await session.refresh(file_item)
@@ -97,36 +45,14 @@ async def update_file(file_id: str, title: str) -> StoredFile:
 
 async def delete_file(file_id: str) -> None:
     async with async_session_maker() as session:
-        file_item = await session.get(StoredFile, file_id)
-        if not file_item:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-        stored_name = file_item.stored_name
-        await session.delete(file_item)
-        try:
-            await session.commit()
-        except Exception:
-            logger.exception("Failed to delete file record for %s", file_id)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete file record")
-
-    # Удаляем файл только после успешного удаления из БД
-    stored_path = STORAGE_DIR / stored_name
-    if stored_path.exists():
-        stored_path.unlink()
-        logger.info("Deleted stored file %s", stored_name)
+        await ServiceFactory.get_service(name="file", session=session).delete_file(file_id)
 
 
 async def get_file_path(file_id: str) -> tuple[StoredFile, Path]:
-    file_item = await get_file(file_id)
-    stored_path = STORAGE_DIR / file_item.stored_name
-    if not stored_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored file not found")
-    return file_item, stored_path
-
-
-async def create_alert(file_id: str, level: str, message: str) -> Alert:
-    alert = Alert(file_id=file_id, level=level, message=message)
     async with async_session_maker() as session:
-        session.add(alert)
-        await session.commit()
-        await session.refresh(alert)
-        return alert
+        return await ServiceFactory.get_service(name="file", session=session).get_file_path(file_id)
+
+
+async def create_alert(file_id: str, level: str, message: str) -> StoredFile:
+    async with async_session_maker() as session:
+        return await ServiceFactory.get_service(name="alert", session=session).create_alert(file_id, level, message)
