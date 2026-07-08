@@ -1,5 +1,4 @@
 import mimetypes
-import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -7,18 +6,15 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
+from src.config.database import database_settings
 from src.models import Alert, StoredFile
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = BASE_DIR / "storage" / "files"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-DB_URL = (
-    f"postgresql+asyncpg://{os.environ.get('POSTGRES_USER')}:"
-    f"{os.environ.get('POSTGRES_PASSWORD')}@{os.environ.get('POSTGRES_HOST')}:"
-    f"{os.environ.get('PGPORT')}/{os.environ.get('POSTGRES_DB')}"
-)
-engine = create_async_engine(DB_URL)
+
+engine = create_async_engine(database_settings.url)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 

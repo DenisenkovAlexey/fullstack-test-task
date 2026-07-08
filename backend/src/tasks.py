@@ -1,12 +1,15 @@
 import asyncio
-import os
 from pathlib import Path
+
+import celery
+# from aio_celery import Celery
 from celery import Celery
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from src.models import Alert, StoredFile
-from src.service import STORAGE_DIR, DB_URL
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://backend-redis:6379/0")
+from src.config.celery import celery_settings
+from src.config.database import database_settings
+from src.models import Alert, StoredFile
+from src.service import STORAGE_DIR
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 
@@ -18,8 +21,12 @@ def run_in_worker_loop(coroutine):
     return _worker_loop.run_until_complete(coroutine)
 
 
-celery_app = Celery("file_tasks", broker=REDIS_URL, backend=REDIS_URL)
-engine = create_async_engine(DB_URL)
+celery_app = Celery("file_tasks", broker=celery_settings.broker_url, backend=celery_settings.broker_url)
+# celery_app.conf.update(
+#     broker_url=celery_settings.broker_url,
+#     result_backend=celery_settings.broker_url,
+# )
+engine = create_async_engine(database_settings.url)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 
